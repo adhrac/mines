@@ -1,38 +1,39 @@
 #![allow(unused)]
-
 use std::fmt::Display;
+
 fn main() {
-    let board = Board::new_with_mines_at(5, 5, &[(4,4), (3,3), (3,4)]);
+    let mut board = Board::new_with_mines_at(5, 5, &[(0,0), (4,4), (3,3), (3,4)]);
     println!("{:?}", board);
+    board.reveal(4, 0);
+    println!("\n{board}");
+
+    println!("{:?}", vec![1,2,3,4,5]);
 }
 
 struct Board {
-    cells: Vec<Vec<Cell>>,
+    cells: Vec<Vec<Cell>>, // Vec<Vec<Rc<Cell>>>
     rows: usize,
     cols: usize,
-}
-
-impl std::fmt::Debug for Board {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Board(rows: {}, cols: {}, board state: \n", self.rows, self.cols);
-        for row in &self.cells {
-            for cell in row {
-                let s = match cell.value {
-                    CellValue::Mine => "M",
-                    CellValue::Value(n) => &format!("{n}"),
-                };
-                write!(f, "{s}");
-            }
-            write!(f, "\n");
-        }
-        Ok(())
-    }
 }
 
 #[derive(Debug, Copy, Clone)]
 struct Cell {
     value: CellValue,
     state: CellState,
+}
+
+impl Cell {
+    fn to_char(&self) -> char {
+        match self.state {
+            CellState::Unflagged => '☐',
+            CellState::Flagged => '⚐',
+            CellState::Revealed => match self.value {
+                CellValue::Mine => 'M',
+                CellValue::Value(0) => ' ',
+                CellValue::Value(n) => char::from(48 + n as u8),
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -63,7 +64,7 @@ impl Board {
     fn new_with_mines_at(rows: usize, cols: usize, locations: &[(usize, usize)]) -> Self {
         let mut board = Board::new(rows, cols);
 
-        let mut mines_matrix = vec![vec![false; cols]; rows];
+        let mut mines_matrix = vec![vec![false; cols]; rows]; // unnecessary?
         for &(row, col) in locations {
             mines_matrix[row][col] = true;
         }
@@ -91,7 +92,18 @@ impl Board {
     fn reveal(&mut self, row: usize, col: usize) {
         assert!(row < self.rows);
         assert!(col < self.cols);
-        self.cells[row][col].state = CellState::Revealed;
+        
+        let this_cell = &mut self.cells[row][col];
+        this_cell.state = CellState::Revealed;
+
+        if this_cell.value == CellValue::Value(0) {
+            for (neighbor_row, neighbor_col) in self.neighbors_of(row, col) {
+                let neighbor_cell = &self.cells[neighbor_row][neighbor_col];
+                if neighbor_cell.state != CellState::Revealed {
+                    self.reveal(neighbor_row, neighbor_col);
+                }
+            }
+        }
     }
 
     fn neighbors_of(&self, row: usize, col: usize) -> Vec<(usize, usize)> {
@@ -134,5 +146,40 @@ impl Board {
 
     fn won(&self) -> bool {
         !self.lost() && self.not_revealed_cells().all(|cell| cell.value == CellValue::Mine)
+    }
+
+    fn display_with_format<F>(&self, format: F) -> String
+    where F: Fn(&Cell) -> char {
+        let formatted_rows: Vec<String> = self.cells.iter()
+            .map(|row| {
+                row.iter()
+                    .map(|cell| format(cell))
+                    .collect::<String>()
+            })
+            .collect();
+        formatted_rows.join("\n")
+    }
+}
+
+impl Display for Board {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let formatted_board = self.display_with_format(Cell::to_char);
+        write!(f, "{formatted_board}")
+    }
+}
+
+impl std::fmt::Debug for Board {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Board with {} rows and {} cols:\n", self.rows, self.cols);
+
+        let nums = [' ', '1', '2', '3', '4', '5', '6', '7', '8'];
+        let formatted_board = self.display_with_format(|cell| {
+            match cell.value {
+                CellValue::Mine => 'M',
+                CellValue::Value(n) => nums[n],
+            }
+        });
+
+        write!(f, "{formatted_board}")
     }
 }
