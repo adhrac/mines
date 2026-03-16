@@ -8,7 +8,7 @@ pub struct Board {
     cols: usize,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone)]
 struct Cell {
     value: CellValue,
     state: CellState,
@@ -30,7 +30,7 @@ enum CellState {
 impl Cell {
     fn to_char(&self) -> char {
         match self.state {
-            Unflagged => '🮮',
+            Unflagged => '·',
             Flagged => '⚐',
             Revealed => match self.value {
                 Mine => 'M',
@@ -94,6 +94,46 @@ impl Board {
                 if neighbor_cell.state != Revealed {
                     self.reveal(neighbor_row, neighbor_col);
                 }
+            }
+        }
+    }
+
+    pub fn auto_reveal(&mut self, row: usize, col: usize) {
+        let this_cell = &self.cells[row][col];
+
+        let flagged_neighbors: Vec<_> = self.neighbors_of(row, col).into_iter()
+            .filter(|&(r, c)| self.cells[r][c].state == Flagged)
+            .collect();
+
+        let unflagged_neighbors: Vec<_> = self.neighbors_of(row, col).into_iter()
+            .filter(|&(r, c)| self.cells[r][c].state == Unflagged)
+            .collect();
+
+        if let Value(x) = this_cell.value && x == flagged_neighbors.len() {
+            for (neighbor_row, neighbor_col) in unflagged_neighbors {
+                self.reveal(neighbor_row, neighbor_col);
+            }
+        }
+    }
+
+    pub fn flag(&mut self, row: usize, col: usize) {
+        let this_cell = &mut self.cells[row][col];
+        if this_cell.state == Unflagged {
+            this_cell.state = Flagged;
+        }
+    }
+
+    pub fn auto_flag(&mut self, row: usize, col: usize) {
+        let this_cell = &self.cells[row][col];
+        let hidden_neighbors: Vec<_> = self.neighbors_of(row, col).into_iter()
+            .filter(|&(r, c)| self.cells[r][c].state != Revealed)
+            .collect();
+
+        let hidden_neighbors_count = hidden_neighbors.len();
+
+        if let Value(x) = this_cell.value && this_cell.state == Revealed && x == hidden_neighbors_count {
+            for (neighbor_row, neighbor_col) in hidden_neighbors {
+                self.flag(neighbor_row, neighbor_col);
             }
         }
     }
