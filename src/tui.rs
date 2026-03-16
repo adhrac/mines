@@ -1,8 +1,15 @@
-use crossterm::{terminal, cursor, execute};
+use std::io::Write;
+
+use crossterm::cursor::MoveToNextLine;
+use crossterm::{ExecutableCommand, QueueableCommand, cursor, execute, terminal};
+use crossterm::style::{Print, Color};
 use crossterm::event::{self, Event, KeyEvent, KeyEventKind};
-use crate::field::Field;
+use crate::field::{Field, Cell};
+use Action::*;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+
+const FIELD_TOP_LEFT: (u16, u16) = (0, 0);
 
 pub fn main() -> Result<()> {
     let mines = [
@@ -14,16 +21,20 @@ pub fn main() -> Result<()> {
         (7,0), (7,3),
     ];
     let field = Field::new_with_mines_at(8, 8, &mines);
-    let mut t = TerminalApplication::new(std::io::stdout(), field);
+    let mut t = TerminalApplication::new(std::io::stdout(), field, 8, 8);
 
     t.open_application_window()?;
+    t.field.as_mut().unwrap().reveal(2,4);
+    t.print_field()?;
 
     loop {
-        let action = await_input();
-        dbg!(action);
-        execute!(t.w, cursor::MoveToColumn(0))?;
-        if action == Action::Quit {
-            break;
+        match await_input() {
+            Quit => break,
+            MoveLeft  => t.move_cursor(0, -1)?,
+            MoveRight => t.move_cursor(0, 1)?,
+            MoveUp    => t.move_cursor(-1, 0)?,
+            MoveDown  => t.move_cursor(1, 0)?,
+            a => println!("Not yet implemented: {a:?}"),
         }
     }
 
@@ -34,27 +45,75 @@ pub fn main() -> Result<()> {
 struct TerminalApplication {
     w: std::io::Stdout,
     field: Option<Field>,
+    rows: u16,
+    cols: u16,
 }
 
 impl TerminalApplication {
-    fn new(w: std::io::Stdout, field: Field) -> Self {
-        Self { w , field: Some(field) }
+    fn new(w: std::io::Stdout, field: Field, rows: u16, cols: u16) -> Self {
+        Self { w , field: Some(field) , rows, cols }
     }
 
-
     // Set up the application window which is an alternate-screen, raw-mode terminal.
-    pub fn open_application_window(&mut self) -> Result<()> {
+    fn open_application_window(&mut self) -> Result<()> {
         terminal::enable_raw_mode()?;
         execute!(self.w, terminal::EnterAlternateScreen, cursor::MoveToRow(0))?;
         Ok(())
     }
     
     // Close the application window. If the program exits without doing this first, things will get weird.
-    pub fn close_application_window(&mut self) -> Result<()> {
+    fn close_application_window(&mut self) -> Result<()> {
         execute!(self.w, terminal::LeaveAlternateScreen)?;
         terminal::disable_raw_mode()?;
         Ok(())
     }
+
+    fn terminal_style(cell: &Cell) -> char {
+        todo!()
+        // once you have figured out colors and background and stuff
+    }
+
+    fn print_field(&mut self) -> Result<()> {
+        let (old_col, old_row) = cursor::position()?;
+        execute!(self.w, cursor::MoveTo(FIELD_TOP_LEFT.0, FIELD_TOP_LEFT.1))?;
+
+        if let Some(field) = &mut self.field {
+            for line in format!("{field}").lines() {
+                self.w.queue(Print(line))?;
+                self.w.queue(MoveToNextLine(1))?;
+            }
+        }
+
+        self.w.queue(cursor::MoveTo(old_col, old_row))?;
+        self.w.flush()?;
+        Ok(())
+    }
+
+    fn move_cursor(&mut self, n_rows: i16, n_cols: i16) -> Result<()> {
+        let (current_col, current_row) = cursor::position()?;
+        let (current_col, current_row) = (current_col as i16, current_row as i16);
+
+        let (mut new_col, mut new_row) = (current_col + n_cols, current_row + n_rows);
+
+        if new_col < 0 {
+            new_col = 0;
+        }
+        if new_col > self.cols as i16 - 1 {
+            new_col = self.cols as i16 - 1;
+        }
+
+        if new_row < 0 {
+            new_row = 0;
+        }
+        if new_row > self.rows as i16 - 1 {
+            new_row = self.rows as i16 - 1;
+        }
+
+        self.w.execute(cursor::MoveTo(new_col as u16, new_row as u16))?;
+
+        Ok(())
+    }
+
 }
 
 impl Drop for TerminalApplication {

@@ -10,19 +10,19 @@ pub struct Field {
 
 /// A cell that may contain a mine or else indicates how many of its neighbors are mines.
 #[derive(Debug, Clone)]
-struct Cell {
-    value: CellValue,
-    state: CellState,
+pub struct Cell {
+    pub value: CellValue,
+    pub state: CellState,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
-enum CellValue {
+pub enum CellValue {
     Mine,
     Value(usize),
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
-enum CellState {
+pub enum CellState {
     Unflagged,
     Flagged,
     Revealed,
@@ -195,7 +195,7 @@ impl Field {
     }
 
     /// Display the field with the specified function that renders [`Cell`]s as `char`s.
-    fn display_with_format<F>(&self, format: F) -> String
+    pub fn display_with_format<F>(&self, format: F) -> String
     where F: Fn(&Cell) -> char {
         let formatted_rows: Vec<String> = self.cells.iter()
             .map(|row| {
