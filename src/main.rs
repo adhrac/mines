@@ -1,4 +1,6 @@
-use mines::board::Board;
+use crate::board::Board;
+
+mod board;
 
 fn main() {
     let mines = [

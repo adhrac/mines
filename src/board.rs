@@ -1,8 +1,9 @@
 #![allow(unused)]
 use std::fmt::Display;
+use {CellValue::*, CellState::*};
 
 pub struct Board {
-    cells: Vec<Vec<Cell>>, // Vec<Vec<Rc<Cell>>>
+    cells: Vec<Vec<Cell>>,
     rows: usize,
     cols: usize,
 }
@@ -29,12 +30,12 @@ enum CellState {
 impl Cell {
     fn to_char(&self) -> char {
         match self.state {
-            CellState::Unflagged => '☐',
-            CellState::Flagged => '⚐',
-            CellState::Revealed => match self.value {
-                CellValue::Mine => 'M',
-                CellValue::Value(0) => ' ',
-                CellValue::Value(n) => char::from(48 + n as u8),
+            Unflagged => '🮮',
+            Flagged => '⚐',
+            Revealed => match self.value {
+                Mine => 'M',
+                Value(0) => ' ',
+                Value(n) => char::from(48 + n as u8),
             }
         }
     }
@@ -42,7 +43,7 @@ impl Cell {
 
 impl Default for Cell {
     fn default() -> Self {
-        Cell { value: CellValue::Value(0), state: CellState::Unflagged }
+        Cell { value: Value(0), state: Unflagged }
     }
 }
 
@@ -63,7 +64,7 @@ impl Board {
         for row in 0..rows {
             for col in 0..cols {
                 if mines_matrix[row][col] {
-                    board.cells[row][col].value = CellValue::Mine;
+                    board.cells[row][col].value = Mine;
                 }
                 else {
                     let mut neighbor_mine_count = 0;
@@ -72,7 +73,7 @@ impl Board {
                             neighbor_mine_count += 1;
                         }
                     }
-                    board.cells[row][col].value = CellValue::Value(neighbor_mine_count);
+                    board.cells[row][col].value = Value(neighbor_mine_count);
                 }
             }
         }
@@ -85,12 +86,12 @@ impl Board {
         assert!(col < self.cols);
         
         let this_cell = &mut self.cells[row][col];
-        this_cell.state = CellState::Revealed;
+        this_cell.state = Revealed;
 
-        if this_cell.value == CellValue::Value(0) {
+        if this_cell.value == Value(0) {
             for (neighbor_row, neighbor_col) in self.neighbors_of(row, col) {
                 let neighbor_cell = &self.cells[neighbor_row][neighbor_col];
-                if neighbor_cell.state != CellState::Revealed {
+                if neighbor_cell.state != Revealed {
                     self.reveal(neighbor_row, neighbor_col);
                 }
             }
@@ -124,19 +125,19 @@ impl Board {
     }
 
     fn revealed_cells(&self) -> impl Iterator<Item = &Cell> {
-        self.iter().filter(|cell| cell.state == CellState::Revealed)
+        self.iter().filter(|cell| cell.state == Revealed)
     }
 
     fn not_revealed_cells(&self) -> impl Iterator<Item = &Cell> {
-        self.iter().filter(|cell| ! (cell.state == CellState::Revealed))
+        self.iter().filter(|cell| cell.state != Revealed)
     }
 
     pub fn lost(&self) -> bool {
-        self.revealed_cells().any(|cell| cell.value == CellValue::Mine)
+        self.revealed_cells().any(|cell| cell.value == Mine)
     }
 
     pub fn won(&self) -> bool {
-        !self.lost() && self.not_revealed_cells().all(|cell| cell.value == CellValue::Mine)
+        !self.lost() && self.not_revealed_cells().all(|cell| cell.value == Mine)
     }
 
     fn display_with_format<F>(&self, format: F) -> String
@@ -166,8 +167,8 @@ impl std::fmt::Debug for Board {
         let nums = [' ', '1', '2', '3', '4', '5', '6', '7', '8'];
         let formatted_board = self.display_with_format(|cell| {
             match cell.value {
-                CellValue::Mine => 'M',
-                CellValue::Value(n) => nums[n],
+                Mine => 'M',
+                Value(n) => nums[n],
             }
         });
 
