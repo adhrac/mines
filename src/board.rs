@@ -2,12 +2,14 @@
 use std::fmt::Display;
 use {CellValue::*, CellState::*};
 
+/// A `rows` * `cols` field of mines.
 pub struct Board {
     cells: Vec<Vec<Cell>>,
     rows: usize,
     cols: usize,
 }
 
+/// A cell that may contain a mine or else indicates how many of its neighbors are mines.
 #[derive(Debug, Clone)]
 struct Cell {
     value: CellValue,
@@ -27,20 +29,6 @@ enum CellState {
     Revealed,
 }
 
-impl Cell {
-    fn to_char(&self) -> char {
-        match self.state {
-            Unflagged => '·',
-            Flagged => '⚐',
-            Revealed => match self.value {
-                Mine => 'M',
-                Value(0) => ' ',
-                Value(n) => char::from(48 + n as u8),
-            }
-        }
-    }
-}
-
 impl Default for Cell {
     fn default() -> Self {
         Cell { value: Value(0), state: Unflagged }
@@ -48,18 +36,26 @@ impl Default for Cell {
 }
 
 impl Board {
+
+    /// Initialize an empty board with no mines.
     fn new(rows: usize, cols: usize) -> Self {
         let cells = vec![vec![Default::default(); cols]; rows];
         Self { cells, rows, cols }
     }
 
+    /// Initialize a board with mines at the specified locations.
     pub fn new_with_mines_at(rows: usize, cols: usize, locations: &[(usize, usize)]) -> Self {
-        let mut board = Board::new(rows, cols);
-
-        let mut mines_matrix = vec![vec![false; cols]; rows]; // unnecessary?
+        let mut mines_matrix = vec![vec![false; cols]; rows]; 
         for &(row, col) in locations {
             mines_matrix[row][col] = true;
         }
+
+        Self::new_from_bool_matrix(rows, cols, mines_matrix)
+    }
+
+    /// Initialize a board with mines where the specified matrix is `true`.
+    pub fn new_from_bool_matrix(rows: usize, cols: usize, mines_matrix: Vec<Vec<bool>>) -> Self {
+        let mut board = Board::new(rows, cols);
 
         for row in 0..rows {
             for col in 0..cols {
@@ -81,10 +77,11 @@ impl Board {
         board
     }
 
+    /// Reveal the cell at the specified location.
+    /// If the revealed cell is a `Value(0)`, then reveal the cells around it automatically.
+    ///
+    /// Panics: if the specified `row` and `col` lie outside the bounds of the array.
     pub fn reveal(&mut self, row: usize, col: usize) {
-        assert!(row < self.rows);
-        assert!(col < self.cols);
-        
         let this_cell = &mut self.cells[row][col];
         this_cell.state = Revealed;
 
@@ -98,6 +95,9 @@ impl Board {
         }
     }
 
+    /// If the cell at the specified location is a `Value(n)` and it already neighbors `n` flagged cells, reveal the neighboring unflagged cells.
+    ///
+    /// Panics: if the specified `row` and `col` lie outside the bounds of the array.
     pub fn auto_reveal(&mut self, row: usize, col: usize) {
         let this_cell = &self.cells[row][col];
 
@@ -116,6 +116,9 @@ impl Board {
         }
     }
 
+    /// Flag the specified cell (if it is not already flagged or revealed).
+    ///
+    /// Panics: if the specified `row` and `col` lie outside the bounds of the array.
     pub fn flag(&mut self, row: usize, col: usize) {
         let this_cell = &mut self.cells[row][col];
         if this_cell.state == Unflagged {
@@ -123,6 +126,9 @@ impl Board {
         }
     }
 
+    /// If the specified cell is a `Value(n)` and neighbors only `n` unrevealed cells, flag those cells.
+    ///
+    /// Panics: if the specified `row` and `col` lie outside the bounds of the array.
     pub fn auto_flag(&mut self, row: usize, col: usize) {
         let this_cell = &self.cells[row][col];
         let hidden_neighbors: Vec<_> = self.neighbors_of(row, col).into_iter()
@@ -138,6 +144,10 @@ impl Board {
         }
     }
 
+    /// Returns a vec containing the `(row, col)` indices of the neighbors of the specified cell.
+    /// This function performs checks wrt the bounds of the array and the coordinates that it returns are therefore always valid.
+    ///
+    /// Panics: if the specified `row` and `col` lie outside the bounds of the array.
     fn neighbors_of(&self, row: usize, col: usize) -> Vec<(usize, usize)> {
         assert!(row < self.rows);
         assert!(col < self.cols);
@@ -160,26 +170,32 @@ impl Board {
         neighbors.into_iter().map(|(a, b)| (a.try_into().unwrap(), b.try_into().unwrap())).collect()
     }
 
+    /// Returns an iterator over all the cells in the `Board`.
     fn iter(&self) -> impl Iterator<Item = &Cell> {
         self.cells.iter().flatten()
     }
 
+    /// Returns an iterator over all the cells in the `Board` that have been revealed.
     fn revealed_cells(&self) -> impl Iterator<Item = &Cell> {
         self.iter().filter(|cell| cell.state == Revealed)
     }
 
+    /// Returns an iterator over all the cells in the `Board` that are not revealed.
     fn not_revealed_cells(&self) -> impl Iterator<Item = &Cell> {
         self.iter().filter(|cell| cell.state != Revealed)
     }
 
+    /// Returns `true` if the game has been lost.
     pub fn lost(&self) -> bool {
         self.revealed_cells().any(|cell| cell.value == Mine)
     }
 
+    /// Returns `true` if the game has been won.
     pub fn won(&self) -> bool {
         !self.lost() && self.not_revealed_cells().all(|cell| cell.value == Mine)
     }
 
+    /// Display the board with the specified function that turns [`Cell`]s into `char`s.
     fn display_with_format<F>(&self, format: F) -> String
     where F: Fn(&Cell) -> char {
         let formatted_rows: Vec<String> = self.cells.iter()
@@ -195,7 +211,16 @@ impl Board {
 
 impl Display for Board {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let formatted_board = self.display_with_format(Cell::to_char);
+        let formatted_board = self.display_with_format(|cell| {
+            match cell.state {
+                Unflagged => '·',
+                Flagged => '⚐',
+                Revealed => match cell.value {
+                    Mine => 'M',
+                    Value(n) => [' ', '1', '2', '3', '4', '5', '6', '7', '8'][n]
+                }
+            }
+        });
         write!(f, "{formatted_board}")
     }
 }
