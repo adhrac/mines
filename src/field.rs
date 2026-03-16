@@ -1,9 +1,8 @@
-#![allow(unused)]
 use std::fmt::Display;
 use {CellValue::*, CellState::*};
 
 /// A `rows` * `cols` field of mines.
-pub struct Board {
+pub struct Field {
     cells: Vec<Vec<Cell>>,
     rows: usize,
     cols: usize,
@@ -35,15 +34,15 @@ impl Default for Cell {
     }
 }
 
-impl Board {
+impl Field {
 
-    /// Initialize an empty board with no mines.
+    /// Initialize an empty field with no mines.
     fn new(rows: usize, cols: usize) -> Self {
         let cells = vec![vec![Default::default(); cols]; rows];
         Self { cells, rows, cols }
     }
 
-    /// Initialize a board with mines at the specified locations.
+    /// Initialize a field with mines at the specified locations.
     pub fn new_with_mines_at(rows: usize, cols: usize, locations: &[(usize, usize)]) -> Self {
         let mut mines_matrix = vec![vec![false; cols]; rows]; 
         for &(row, col) in locations {
@@ -53,28 +52,28 @@ impl Board {
         Self::new_from_bool_matrix(rows, cols, mines_matrix)
     }
 
-    /// Initialize a board with mines where the specified matrix is `true`.
+    /// Initialize a field with mines where the specified matrix is `true`.
     pub fn new_from_bool_matrix(rows: usize, cols: usize, mines_matrix: Vec<Vec<bool>>) -> Self {
-        let mut board = Board::new(rows, cols);
+        let mut field = Field::new(rows, cols);
 
         for row in 0..rows {
             for col in 0..cols {
                 if mines_matrix[row][col] {
-                    board.cells[row][col].value = Mine;
+                    field.cells[row][col].value = Mine;
                 }
                 else {
                     let mut neighbor_mine_count = 0;
-                    for (neighbor_row, neighbor_col) in board.neighbors_of(row, col) {
+                    for (neighbor_row, neighbor_col) in field.neighbors_of(row, col) {
                         if mines_matrix[neighbor_row][neighbor_col] {
                             neighbor_mine_count += 1;
                         }
                     }
-                    board.cells[row][col].value = Value(neighbor_mine_count);
+                    field.cells[row][col].value = Value(neighbor_mine_count);
                 }
             }
         }
 
-        board
+        field
     }
 
     /// Reveal the cell at the specified location.
@@ -170,17 +169,17 @@ impl Board {
         neighbors.into_iter().map(|(a, b)| (a.try_into().unwrap(), b.try_into().unwrap())).collect()
     }
 
-    /// Returns an iterator over all the cells in the `Board`.
+    /// Returns an iterator over all the cells in the `Field`.
     fn iter(&self) -> impl Iterator<Item = &Cell> {
         self.cells.iter().flatten()
     }
 
-    /// Returns an iterator over all the cells in the `Board` that have been revealed.
+    /// Returns an iterator over all the cells in the `Field` that have been revealed.
     fn revealed_cells(&self) -> impl Iterator<Item = &Cell> {
         self.iter().filter(|cell| cell.state == Revealed)
     }
 
-    /// Returns an iterator over all the cells in the `Board` that are not revealed.
+    /// Returns an iterator over all the cells in the `Field` that are not revealed.
     fn not_revealed_cells(&self) -> impl Iterator<Item = &Cell> {
         self.iter().filter(|cell| cell.state != Revealed)
     }
@@ -195,7 +194,7 @@ impl Board {
         !self.lost() && self.not_revealed_cells().all(|cell| cell.value == Mine)
     }
 
-    /// Display the board with the specified function that turns [`Cell`]s into `char`s.
+    /// Display the field with the specified function that renders [`Cell`]s as `char`s.
     fn display_with_format<F>(&self, format: F) -> String
     where F: Fn(&Cell) -> char {
         let formatted_rows: Vec<String> = self.cells.iter()
@@ -209,9 +208,9 @@ impl Board {
     }
 }
 
-impl Display for Board {
+impl Display for Field {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let formatted_board = self.display_with_format(|cell| {
+        let formatted_field = self.display_with_format(|cell| {
             match cell.state {
                 Unflagged => '·',
                 Flagged => '⚐',
@@ -221,22 +220,21 @@ impl Display for Board {
                 }
             }
         });
-        write!(f, "{formatted_board}")
+        write!(f, "{formatted_field}")
     }
 }
 
-impl std::fmt::Debug for Board {
+impl std::fmt::Debug for Field {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Board with {} rows and {} cols:\n", self.rows, self.cols)?;
+        write!(f, "Field with {} rows and {} cols:\n", self.rows, self.cols)?;
 
-        let nums = [' ', '1', '2', '3', '4', '5', '6', '7', '8'];
-        let formatted_board = self.display_with_format(|cell| {
+        let formatted_field = self.display_with_format(|cell| {
             match cell.value {
                 Mine => 'M',
-                Value(n) => nums[n],
+                Value(n) => [' ', '1', '2', '3', '4', '5', '6', '7', '8'][n],
             }
         });
 
-        write!(f, "{formatted_board}")
+        write!(f, "{formatted_field}")
     }
 }
