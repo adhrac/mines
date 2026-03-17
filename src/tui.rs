@@ -4,12 +4,13 @@ use crossterm::cursor::MoveToNextLine;
 use crossterm::{ExecutableCommand, QueueableCommand, cursor, execute, terminal};
 use crossterm::style::{Print, Color};
 use crossterm::event::{self, Event, KeyEvent, KeyEventKind};
-use crate::field::{Field, Cell};
+use crate::field::{Field, Cell, CellState, CellValue};
 use Action::*;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
-const FIELD_TOP_LEFT: (u16, u16) = (0, 0);
+const FIELD_TOP_LEFT_ROW: u16 = 0;
+const FIELD_TOP_LEFT_COL: u16 = 0;
 
 pub fn main() -> Result<()> {
     let mines = [
@@ -21,7 +22,8 @@ pub fn main() -> Result<()> {
         (7,0), (7,3),
     ];
     let field = Field::new_with_mines_at(8, 8, &mines);
-    let mut t = TerminalApplication::new(std::io::stdout(), field, 8, 8);
+    let mut t = TerminalApplication::new(std::io::stdout(), 8, 8);
+    t.field = Some(field);
 
     t.open_application_window()?;
     t.field.as_mut().unwrap().reveal(2,4);
@@ -34,8 +36,11 @@ pub fn main() -> Result<()> {
             MoveRight => t.move_cursor(0, 1)?,
             MoveUp    => t.move_cursor(-1, 0)?,
             MoveDown  => t.move_cursor(1, 0)?,
+            Flag      => t.flag()?,
+            Reveal    => t.reveal()?,
             a => println!("Not yet implemented: {a:?}"),
         }
+        t.print_field()?;
     }
 
     t.close_application_window()?;
@@ -50,8 +55,8 @@ struct TerminalApplication {
 }
 
 impl TerminalApplication {
-    fn new(w: std::io::Stdout, field: Field, rows: u16, cols: u16) -> Self {
-        Self { w , field: Some(field) , rows, cols }
+    fn new(w: std::io::Stdout, rows: u16, cols: u16) -> Self {
+        Self { w , field: None, rows, cols }
     }
 
     // Set up the application window which is an alternate-screen, raw-mode terminal.
@@ -75,11 +80,19 @@ impl TerminalApplication {
 
     fn print_field(&mut self) -> Result<()> {
         let (old_col, old_row) = cursor::position()?;
-        execute!(self.w, cursor::MoveTo(FIELD_TOP_LEFT.0, FIELD_TOP_LEFT.1))?;
+        execute!(self.w, cursor::MoveTo(FIELD_TOP_LEFT_COL, FIELD_TOP_LEFT_ROW))?;
 
         if let Some(field) = &mut self.field {
             for line in format!("{field}").lines() {
                 self.w.queue(Print(line))?;
+                self.w.queue(MoveToNextLine(1))?;
+            }
+        }
+        else {
+            for _ in 0..self.rows {
+                for _ in 0..self.cols {
+                    self.w.queue(Print("·"))?;
+                }
                 self.w.queue(MoveToNextLine(1))?;
             }
         }
@@ -96,20 +109,60 @@ impl TerminalApplication {
         let (mut new_col, mut new_row) = (current_col + n_cols, current_row + n_rows);
 
         if new_col < 0 {
-            new_col = 0;
+            new_col = self.cols as i16 - 1;
         }
         if new_col > self.cols as i16 - 1 {
-            new_col = self.cols as i16 - 1;
+            new_col = 0;
         }
 
         if new_row < 0 {
-            new_row = 0;
+            new_row = self.rows as i16 - 1;
         }
         if new_row > self.rows as i16 - 1 {
-            new_row = self.rows as i16 - 1;
+            new_row = 0;
         }
 
         self.w.execute(cursor::MoveTo(new_col as u16, new_row as u16))?;
+
+        Ok(())
+    }
+
+    fn flag(&mut self) -> Result<()> {
+        if let Some(field) = &mut self.field {
+            let (cursor_col, cursor_row) = cursor::position()?;
+
+            // coordinates on the field
+            let field_row = (cursor_row - FIELD_TOP_LEFT_ROW) as usize;
+            let field_col = (cursor_col - FIELD_TOP_LEFT_COL) as usize;
+
+            match field.cells[field_row][field_col].state {
+                CellState::Unflagged => field.flag(field_row, field_col),
+                CellState::Flagged   => field.unflag(field_row, field_col),
+                CellState::Revealed  => field.auto_flag(field_row, field_col),
+            };
+        }
+        Ok(())
+    }
+
+    fn reveal(&mut self) -> Result<()> {
+        if let Some(field) = &mut self.field {
+            let (cursor_col, cursor_row) = cursor::position()?;
+
+            // coordinates on the field
+            let field_row = (cursor_row - FIELD_TOP_LEFT_ROW) as usize;
+            let field_col = (cursor_col - FIELD_TOP_LEFT_COL) as usize;
+
+            // reveal or autoreveal
+            // they are allowed to blow themselves up
+            match field.cells[field_row][field_col].state {
+                CellState::Revealed => field.auto_reveal(field_row, field_col),
+                _                   => field.reveal(field_row, field_col),
+            };
+        }
+        else {
+            // initialize
+            todo!();
+        }
 
         Ok(())
     }

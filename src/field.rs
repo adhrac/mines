@@ -3,9 +3,9 @@ use {CellValue::*, CellState::*};
 
 /// A `rows` * `cols` field of mines.
 pub struct Field {
-    cells: Vec<Vec<Cell>>,
-    rows: usize,
-    cols: usize,
+    pub cells: Vec<Vec<Cell>>,
+    pub rows: usize,
+    pub cols: usize,
 }
 
 /// A cell that may contain a mine or else indicates how many of its neighbors are mines.
@@ -122,6 +122,16 @@ impl Field {
         let this_cell = &mut self.cells[row][col];
         if this_cell.state == Unflagged {
             this_cell.state = Flagged;
+        }
+    }
+
+    /// Unflag the specified cell (if it is flagged).
+    ///
+    /// Panics: if the specified `row` and `col` lie outside the bounds of the array.
+    pub fn unflag(&mut self, row: usize, col: usize) {
+        let this_cell = &mut self.cells[row][col];
+        if this_cell.state == Flagged {
+            this_cell.state = Unflagged;
         }
     }
 
