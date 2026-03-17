@@ -29,9 +29,12 @@ pub fn main() -> Result<()> {
     t.field.as_mut().unwrap().reveal(2,4);
     t.print_field()?;
 
-    loop {
+    // 0: continue, 1: quit, 2: win, 3: lose
+    let mut winstate = 0;
+
+    while winstate == 0 {
         match await_input() {
-            Quit => break,
+            Quit => winstate = 1,
             MoveLeft  => t.move_cursor(0, -1)?,
             MoveRight => t.move_cursor(0, 1)?,
             MoveUp    => t.move_cursor(-1, 0)?,
@@ -41,7 +44,38 @@ pub fn main() -> Result<()> {
             a => println!("Not yet implemented: {a:?}"),
         }
         t.print_field()?;
+
+        // win/loss check if we aren't quitting
+        if winstate == 0 && let Some(field) = &mut t.field {
+            let game_won = field.won();
+            let game_lost = field.lost();
+
+            if game_lost {
+                winstate = 3;
+            }
+            else if game_won {
+                winstate = 2;
+            }
+        }
     }
+
+    t.w.execute(cursor::MoveTo(0,t.rows))?;
+    match winstate {
+        2 => { 
+            t.w.execute(Print("You won!"))?;
+            t.w.execute(Print(" Press any key to continue..."))?;
+            while !event::read()?.is_key_press() {}
+        },
+        3 => { 
+            t.w.execute(Print("You lost!"))?;
+            t.w.execute(Print(" Press any key to continue..."))?;
+            while !event::read()?.is_key_press() {}
+        },
+        _ => { 
+            t.w.execute(Print(format!("Unexpected winstate code {winstate}.")))?;
+            () 
+        },
+    };
 
     t.close_application_window()?;
     Ok(())
