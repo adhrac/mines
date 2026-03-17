@@ -1,11 +1,13 @@
 use std::io::Write;
 
 use crossterm::cursor::MoveToNextLine;
-use crossterm::{ExecutableCommand, QueueableCommand, cursor, execute, terminal};
+use crossterm::{ExecutableCommand, QueueableCommand, cursor, execute, queue, terminal};
 use crossterm::style::{Print, Color};
 use crossterm::event::{self, Event, KeyEvent, KeyEventKind};
 use crate::field::{Field, Cell, CellState, CellValue};
 use Action::*;
+use rand::{prelude::*, rng};
+
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -13,24 +15,14 @@ const FIELD_TOP_LEFT_ROW: u16 = 0;
 const FIELD_TOP_LEFT_COL: u16 = 0;
 
 pub fn main() -> Result<()> {
-    let mines = [
-        (0,4), (0,7),
-        (2,0), (2,1),
-        (3,1), 
-        (4,3),
-        (5,3), (5,6),
-        (7,0), (7,3),
-    ];
-    let field = Field::new_with_mines_at(8, 8, &mines);
-    let mut t = TerminalApplication::new(std::io::stdout(), 8, 8);
-    t.field = Some(field);
+    let mut t = TerminalApplication::new(std::io::stdout(), 16, 30, 99);
 
     t.open_application_window()?;
-    t.field.as_mut().unwrap().reveal(2,4);
     t.print_field()?;
 
     // 0: continue, 1: quit, 2: win, 3: lose
     let mut winstate = 0;
+    t.w.execute(cursor::MoveTo(t.cols / 2, t.rows / 2))?;
 
     while winstate == 0 {
         match await_input() {
@@ -44,6 +36,8 @@ pub fn main() -> Result<()> {
             a => println!("Not yet implemented: {a:?}"),
         }
         t.print_field()?;
+        t.print_remaining_mines()?;
+        // t.print_debug_field()?;
 
         // win/loss check if we aren't quitting
         if winstate == 0 && let Some(field) = &mut t.field {
@@ -67,7 +61,12 @@ pub fn main() -> Result<()> {
             while !event::read()?.is_key_press() {}
         },
         3 => { 
-            t.w.execute(Print("You lost!"))?;
+            // figure out how many mines are left
+            let nr_flagged_mines = t.field.as_ref().expect("Lost on an empty board??").iter()
+                .filter(|&cell| cell.state == CellState::Flagged && cell.value == CellValue::Mine)
+                .count();
+
+            t.w.execute(Print(format!("You lost! Mines: {}/{}.", nr_flagged_mines, t.nr_mines)))?;
             t.w.execute(Print(" Press any key to continue..."))?;
             while !event::read()?.is_key_press() {}
         },
@@ -86,11 +85,12 @@ struct TerminalApplication {
     field: Option<Field>,
     rows: u16,
     cols: u16,
+    nr_mines: usize,
 }
 
 impl TerminalApplication {
-    fn new(w: std::io::Stdout, rows: u16, cols: u16) -> Self {
-        Self { w , field: None, rows, cols }
+    fn new(w: std::io::Stdout, rows: u16, cols: u16, nr_mines: usize) -> Self {
+        Self { w , field: None, rows, cols, nr_mines }
     }
 
     // Set up the application window which is an alternate-screen, raw-mode terminal.
@@ -131,10 +131,51 @@ impl TerminalApplication {
             }
         }
 
-        self.w.queue(cursor::MoveTo(old_col, old_row))?;
         self.w.flush()?;
+        self.w.execute(cursor::MoveTo(old_col, old_row))?;
         Ok(())
     }
+
+    fn print_debug_field(&mut self) -> Result<()> {
+        let (old_col, old_row) = cursor::position()?;
+        execute!(self.w, cursor::MoveTo(FIELD_TOP_LEFT_COL + self.cols + 2, FIELD_TOP_LEFT_ROW))?;
+
+        if let Some(field) = &mut self.field {
+            for line in format!("{field:?}").lines() {
+                queue!(self.w,
+                    Print(line),
+                    MoveToNextLine(1),
+                    cursor::MoveToColumn(FIELD_TOP_LEFT_COL + self.cols + 2),
+                )?;
+            }
+        }
+
+        self.w.flush()?;
+        self.w.execute(cursor::MoveTo(old_col, old_row))?;
+
+        Ok(())
+    }
+
+    fn print_remaining_mines(&mut self) -> Result<()> {
+        let (old_col, old_row) = cursor::position()?;
+        execute!(self.w, cursor::MoveTo(FIELD_TOP_LEFT_COL + self.cols + 2, FIELD_TOP_LEFT_ROW))?;
+
+        if let Some(field) = &mut self.field {
+            let nr_flagged_mines = field.iter()
+                .filter(|&cell| cell.state == CellState::Flagged && cell.value == CellValue::Mine)
+                .count();
+
+            execute!(self.w, 
+                cursor::MoveTo(0,self.rows),
+                Print(format!("Mines: {}/{}", nr_flagged_mines, self.nr_mines)),
+            )?;
+        }
+
+        self.w.execute(cursor::MoveTo(old_col, old_row))?;
+
+        Ok(())
+    }
+
 
     fn move_cursor(&mut self, n_rows: i16, n_cols: i16) -> Result<()> {
         let (current_col, current_row) = cursor::position()?;
@@ -179,8 +220,8 @@ impl TerminalApplication {
     }
 
     fn reveal(&mut self) -> Result<()> {
+        let (cursor_col, cursor_row) = cursor::position()?;
         if let Some(field) = &mut self.field {
-            let (cursor_col, cursor_row) = cursor::position()?;
 
             // coordinates on the field
             let field_row = (cursor_row - FIELD_TOP_LEFT_ROW) as usize;
@@ -195,7 +236,22 @@ impl TerminalApplication {
         }
         else {
             // initialize
-            todo!();
+            let mut indices = Vec::new();
+            for r in 0..self.rows {
+                for c in 0..self.cols {
+                    let y_dist = r.abs_diff(cursor_row);
+                    let x_dist = c.abs_diff(cursor_col);
+                    if x_dist > 1 || y_dist > 1 {
+                        indices.push((r as usize, c as usize));
+                    }
+                }
+            }
+
+            let mut rng = rng();
+            let mine_locations: Vec<_> = indices.sample(&mut rng, self.nr_mines).cloned().collect();
+            self.field = Some(Field::new_with_mines_at(self.rows as usize, self.cols as usize, &mine_locations[..]));
+
+            self.reveal()?;
         }
 
         Ok(())
@@ -227,10 +283,10 @@ fn await_input() -> Action {
             match code { // match on the keycode
                 Char('d') => return Reveal,
                 Char('f') => return Flag, 
-                Char('h') => return MoveLeft, 
-                Char('j') => return MoveDown, 
-                Char('k') => return MoveUp, 
-                Char('l') => return MoveRight, 
+                Char('h') | Left  => return MoveLeft, 
+                Char('j') | Down  => return MoveDown, 
+                Char('k') | Up    => return MoveUp, 
+                Char('l') | Right => return MoveRight, 
                 Char('q') => return Quit,
                 _ => (),
             }

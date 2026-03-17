@@ -180,17 +180,17 @@ impl Field {
     }
 
     /// Returns an iterator over all the cells in the `Field`.
-    fn iter(&self) -> impl Iterator<Item = &Cell> {
+    pub fn iter(&self) -> impl Iterator<Item = &Cell> {
         self.cells.iter().flatten()
     }
 
     /// Returns an iterator over all the cells in the `Field` that have been revealed.
-    fn revealed_cells(&self) -> impl Iterator<Item = &Cell> {
+    pub fn revealed_cells(&self) -> impl Iterator<Item = &Cell> {
         self.iter().filter(|cell| cell.state == Revealed)
     }
 
     /// Returns an iterator over all the cells in the `Field` that are not revealed.
-    fn not_revealed_cells(&self) -> impl Iterator<Item = &Cell> {
+    pub fn not_revealed_cells(&self) -> impl Iterator<Item = &Cell> {
         self.iter().filter(|cell| cell.state != Revealed)
     }
 
@@ -236,8 +236,6 @@ impl Display for Field {
 
 impl std::fmt::Debug for Field {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Field with {} rows and {} cols:\n", self.rows, self.cols)?;
-
         let formatted_field = self.display_with_format(|cell| {
             match cell.value {
                 Mine => 'M',
@@ -245,6 +243,7 @@ impl std::fmt::Debug for Field {
             }
         });
 
-        write!(f, "{formatted_field}")
+        write!(f, "{formatted_field}\n")?;
+        write!(f, "rows: {}, cols: {}", self.rows, self.cols)
     }
 }
