@@ -1,12 +1,15 @@
 use std::io::Write;
 
 use crossterm::cursor::MoveToNextLine;
+use crossterm::terminal::disable_raw_mode;
 use crossterm::{ExecutableCommand, QueueableCommand, cursor, execute, queue, terminal};
 use crossterm::style::{Print, Color};
 use crossterm::event::{self, Event, KeyEvent, KeyEventKind};
-use crate::field::{Field, Cell, CellState, CellValue};
+use jasmines::field::{Field, Cell, CellState, CellValue};
 use Action::*;
-use rand::{prelude::*, rng};
+use rand::{rng, prelude::IndexedRandom};
+
+use std::panic::{set_hook, take_hook};
 
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -16,6 +19,7 @@ const FIELD_TOP_LEFT_COL: u16 = 0;
 
 pub fn main() -> Result<()> {
     let mut t = TerminalApplication::new(std::io::stdout(), 16, 30, 99);
+    TerminalApplication::init_panic_hook();
 
     t.open_application_window()?;
     t.print_field()?;
@@ -33,6 +37,7 @@ pub fn main() -> Result<()> {
             MoveDown  => t.move_cursor(1, 0)?,
             Flag      => t.flag()?,
             Reveal    => t.reveal()?,
+            #[allow(unreachable_patterns)]
             a => println!("Not yet implemented: {a:?}"),
         }
         t.print_field()?;
@@ -107,6 +112,15 @@ impl TerminalApplication {
         Ok(())
     }
 
+    fn init_panic_hook() {
+        let original_hook = take_hook();
+        set_hook(Box::new(move |panic_info| {
+            let _ = disable_raw_mode();
+            let _ = std::io::stdout().execute(terminal::LeaveAlternateScreen);
+            original_hook(panic_info);
+        }));
+    }
+
     fn terminal_style(cell: &Cell) -> char {
         todo!()
         // once you have figured out colors and background and stuff
@@ -136,6 +150,7 @@ impl TerminalApplication {
         Ok(())
     }
 
+    #[allow(unused)]
     fn print_debug_field(&mut self) -> Result<()> {
         let (old_col, old_row) = cursor::position()?;
         execute!(self.w, cursor::MoveTo(FIELD_TOP_LEFT_COL + self.cols + 2, FIELD_TOP_LEFT_ROW))?;
@@ -158,7 +173,6 @@ impl TerminalApplication {
 
     fn print_remaining_mines(&mut self) -> Result<()> {
         let (old_col, old_row) = cursor::position()?;
-        execute!(self.w, cursor::MoveTo(FIELD_TOP_LEFT_COL + self.cols + 2, FIELD_TOP_LEFT_ROW))?;
 
         if let Some(field) = &mut self.field {
             let nr_flagged_mines = field.iter()
@@ -288,6 +302,8 @@ fn await_input() -> Action {
                 Char('k') | Up    => return MoveUp, 
                 Char('l') | Right => return MoveRight, 
                 Char('q') => return Quit,
+                #[cfg(debug_assertions)]
+                Char('p') => panic!("User-initiated panic"),
                 _ => (),
             }
         }
