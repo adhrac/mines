@@ -218,31 +218,34 @@ impl Field {
     }
 }
 
+pub fn display_style(cell: &Cell) -> char {
+    match cell.state {
+        Unflagged => '·',
+        Flagged => '⚐',
+        Revealed => match cell.value {
+            Mine => 'M',
+            Value(n) => [' ', '1', '2', '3', '4', '5', '6', '7', '8'][n]
+        }
+    }
+}
+
+pub fn debug_style(cell: &Cell) -> char {
+    match cell.value {
+        Mine => 'M',
+        Value(n) => [' ', '1', '2', '3', '4', '5', '6', '7', '8'][n],
+    }
+}
+
 impl Display for Field {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let formatted_field = self.display_with_format(|cell| {
-            match cell.state {
-                Unflagged => '·',
-                Flagged => '⚐',
-                Revealed => match cell.value {
-                    Mine => 'M',
-                    Value(n) => [' ', '1', '2', '3', '4', '5', '6', '7', '8'][n]
-                }
-            }
-        });
+        let formatted_field = self.display_with_format(display_style);
         write!(f, "{formatted_field}")
     }
 }
 
 impl std::fmt::Debug for Field {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let formatted_field = self.display_with_format(|cell| {
-            match cell.value {
-                Mine => 'M',
-                Value(n) => [' ', '1', '2', '3', '4', '5', '6', '7', '8'][n],
-            }
-        });
-
+        let formatted_field = self.display_with_format(debug_style);
         write!(f, "{formatted_field}\n")?;
         write!(f, "rows: {}, cols: {}", self.rows, self.cols)
     }

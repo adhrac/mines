@@ -1,11 +1,9 @@
 use std::io::Write;
 
-use crossterm::cursor::MoveToNextLine;
-use crossterm::terminal::disable_raw_mode;
 use crossterm::{ExecutableCommand, QueueableCommand, cursor, execute, queue, terminal};
-use crossterm::style::{Print, Color};
+use crossterm::style::{Color, Print, StyledContent, Stylize};
 use crossterm::event::{self, Event, KeyEvent, KeyEventKind};
-use jasmines::field::{Field, Cell, CellState, CellValue};
+use jasmines::field::*;
 use Action::*;
 use rand::{rng, prelude::IndexedRandom};
 
@@ -23,10 +21,10 @@ pub fn main() -> Result<()> {
 
     t.open_application_window()?;
     t.print_field()?;
+    t.w.execute(cursor::MoveTo(t.cols / 2, t.rows / 2))?;
 
     // 0: continue, 1: quit, 2: win, 3: lose
     let mut winstate = 0;
-    t.w.execute(cursor::MoveTo(t.cols / 2, t.rows / 2))?;
 
     while winstate == 0 {
         match await_input() {
@@ -76,8 +74,7 @@ pub fn main() -> Result<()> {
             while !event::read()?.is_key_press() {}
         },
         _ => { 
-            t.w.execute(Print(format!("Unexpected winstate code {winstate}.")))?;
-            () 
+            panic!("Unexpected winstate code {winstate}")
         },
     };
 
@@ -115,15 +112,10 @@ impl TerminalApplication {
     fn init_panic_hook() {
         let original_hook = take_hook();
         set_hook(Box::new(move |panic_info| {
-            let _ = disable_raw_mode();
+            let _ = terminal::disable_raw_mode();
             let _ = std::io::stdout().execute(terminal::LeaveAlternateScreen);
             original_hook(panic_info);
         }));
-    }
-
-    fn terminal_style(cell: &Cell) -> char {
-        todo!()
-        // once you have figured out colors and background and stuff
     }
 
     fn print_field(&mut self) -> Result<()> {
@@ -133,7 +125,7 @@ impl TerminalApplication {
         if let Some(field) = &mut self.field {
             for line in format!("{field}").lines() {
                 self.w.queue(Print(line))?;
-                self.w.queue(MoveToNextLine(1))?;
+                self.w.queue(cursor::MoveToNextLine(1))?;
             }
         }
         else {
@@ -141,7 +133,7 @@ impl TerminalApplication {
                 for _ in 0..self.cols {
                     self.w.queue(Print("·"))?;
                 }
-                self.w.queue(MoveToNextLine(1))?;
+                self.w.queue(cursor::MoveToNextLine(1))?;
             }
         }
 
@@ -159,7 +151,7 @@ impl TerminalApplication {
             for line in format!("{field:?}").lines() {
                 queue!(self.w,
                     Print(line),
-                    MoveToNextLine(1),
+                    cursor::MoveToNextLine(1),
                     cursor::MoveToColumn(FIELD_TOP_LEFT_COL + self.cols + 2),
                 )?;
             }
@@ -242,10 +234,11 @@ impl TerminalApplication {
             let field_col = (cursor_col - FIELD_TOP_LEFT_COL) as usize;
 
             // reveal or autoreveal
-            // they are allowed to blow themselves up
+            // they are not allowed to blow themselves up
             match field.cells[field_row][field_col].state {
-                CellState::Revealed => field.auto_reveal(field_row, field_col),
-                _                   => field.reveal(field_row, field_col),
+                CellState::Revealed  => field.auto_reveal(field_row, field_col),
+                CellState::Unflagged => field.reveal(field_row, field_col),
+                CellState::Flagged   => (),
             };
         }
         else {
@@ -271,6 +264,25 @@ impl TerminalApplication {
         Ok(())
     }
 
+    fn print_field_with_style<F>(&mut self, f: F) -> Result<()>
+    where F: Fn(&Cell) -> StyledContent<char> {
+        todo!()
+    }
+
+}
+
+fn show_mines_style(cell: &Cell) -> StyledContent<char> {
+    use jasmines::field::{CellState::*, CellValue::*};
+    match cell.state {
+        Unflagged if cell.value == Mine => 'M'.white().on_red(),
+        Flagged if cell.value != Mine   => 'F'.white().on_red(),
+        _                               => terminal_style(&cell),
+    }
+}
+
+fn terminal_style(cell: &Cell) -> StyledContent<char> {
+    // todo 
+    jasmines::field::display_style(cell).white().on_black()
 }
 
 impl Drop for TerminalApplication {
