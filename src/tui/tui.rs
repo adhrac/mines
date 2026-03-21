@@ -1,7 +1,7 @@
 use std::io::Write;
 
 use crossterm::{ExecutableCommand, QueueableCommand, cursor, execute, queue, terminal};
-use crossterm::style::{Color, Print, StyledContent, Stylize};
+use crossterm::style::{Print, StyledContent, Stylize};
 use crossterm::event::{self, Event, KeyEvent, KeyEventKind};
 use jasmines::field::*;
 use Action::*;
@@ -9,6 +9,7 @@ use rand::{rng, prelude::IndexedRandom};
 
 use std::panic::{set_hook, take_hook};
 
+mod style;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -69,6 +70,7 @@ pub fn main() -> Result<()> {
                 .filter(|&cell| cell.state == CellState::Flagged && cell.value == CellValue::Mine)
                 .count();
 
+            t.print_field_with_style(show_mines_style)?;
             t.w.execute(Print(format!("You lost! Mines: {}/{}.", nr_flagged_mines, t.nr_mines)))?;
             t.w.execute(Print(" Press any key to continue..."))?;
             while !event::read()?.is_key_press() {}
@@ -119,27 +121,7 @@ impl TerminalApplication {
     }
 
     fn print_field(&mut self) -> Result<()> {
-        let (old_col, old_row) = cursor::position()?;
-        execute!(self.w, cursor::MoveTo(FIELD_TOP_LEFT_COL, FIELD_TOP_LEFT_ROW))?;
-
-        if let Some(field) = &mut self.field {
-            for line in format!("{field}").lines() {
-                self.w.queue(Print(line))?;
-                self.w.queue(cursor::MoveToNextLine(1))?;
-            }
-        }
-        else {
-            for _ in 0..self.rows {
-                for _ in 0..self.cols {
-                    self.w.queue(Print("·"))?;
-                }
-                self.w.queue(cursor::MoveToNextLine(1))?;
-            }
-        }
-
-        self.w.flush()?;
-        self.w.execute(cursor::MoveTo(old_col, old_row))?;
-        Ok(())
+        self.print_field_with_style(terminal_style)
     }
 
     #[allow(unused)]
@@ -266,7 +248,31 @@ impl TerminalApplication {
 
     fn print_field_with_style<F>(&mut self, f: F) -> Result<()>
     where F: Fn(&Cell) -> StyledContent<char> {
-        todo!()
+        let (old_col, old_row) = cursor::position()?;
+        execute!(self.w, cursor::MoveTo(FIELD_TOP_LEFT_COL, FIELD_TOP_LEFT_ROW))?;
+
+        if let Some(field) = &mut self.field {
+            for line in &field.cells {
+                for cell in line {
+                    self.w.queue(Print(f(cell)))?;
+                }
+                self.w.queue(cursor::MoveToNextLine(1))?;
+                self.w.queue(cursor::MoveToColumn(FIELD_TOP_LEFT_COL))?;
+            }
+        }
+        else {
+            let default_cell: Cell = Default::default();
+            for _ in 0..self.rows {
+                for _ in 0..self.cols {
+                    self.w.queue(Print(f(&default_cell)))?;
+                }
+                self.w.queue(cursor::MoveToNextLine(1))?;
+            }
+        }
+        
+        self.w.flush()?;
+        self.w.execute(cursor::MoveTo(old_col, old_row))?;
+        Ok(())
     }
 
 }
@@ -274,7 +280,8 @@ impl TerminalApplication {
 fn show_mines_style(cell: &Cell) -> StyledContent<char> {
     use jasmines::field::{CellState::*, CellValue::*};
     match cell.state {
-        Unflagged if cell.value == Mine => 'M'.white().on_red(),
+        Unflagged if cell.value == Mine => 'M'.black().on_white(),
+        Revealed if cell.value == Mine  => 'M'.white().on_red(),
         Flagged if cell.value != Mine   => 'F'.white().on_red(),
         _                               => terminal_style(&cell),
     }
