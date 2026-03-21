@@ -1,9 +1,10 @@
 use std::io::Write;
 
 use crossterm::{ExecutableCommand, QueueableCommand, cursor, execute, queue, terminal};
-use crossterm::style::{Print, StyledContent, Stylize};
+use crossterm::style::{Print, StyledContent};
 use crossterm::event::{self, Event, KeyEvent, KeyEventKind};
 use jasmines::field::*;
+use crate::style::Stylize;
 use Action::*;
 use rand::{rng, prelude::IndexedRandom};
 
@@ -21,6 +22,7 @@ pub fn main() -> Result<()> {
     TerminalApplication::init_panic_hook();
 
     t.open_application_window()?;
+    t.w.execute(cursor::SetCursorStyle::BlinkingBlock)?;
     t.print_field()?;
     t.w.execute(cursor::MoveTo(t.cols / 2, t.rows / 2))?;
 
@@ -59,6 +61,7 @@ pub fn main() -> Result<()> {
 
     t.w.execute(cursor::MoveTo(0,t.rows))?;
     match winstate {
+        1 => (),
         2 => { 
             t.w.execute(Print("You won!"))?;
             t.w.execute(Print(" Press any key to continue..."))?;
@@ -150,7 +153,7 @@ impl TerminalApplication {
 
         if let Some(field) = &mut self.field {
             let nr_flagged_mines = field.iter()
-                .filter(|&cell| cell.state == CellState::Flagged && cell.value == CellValue::Mine)
+                .filter(|&cell| cell.state == CellState::Flagged)
                 .count();
 
             execute!(self.w, 
@@ -287,9 +290,25 @@ fn show_mines_style(cell: &Cell) -> StyledContent<char> {
     }
 }
 
+#[allow(unused)]
+// could be good to have square cells... but for some reason these count as 2 characters wide for moving cursor left/right
+const FULL_WIDTH_DIGIT: [char; 10] = ['　','１','２','３','４','５','６','７','８','９'];
+
 fn terminal_style(cell: &Cell) -> StyledContent<char> {
-    // todo 
-    jasmines::field::display_style(cell).white().on_black()
+    use jasmines::field::{CellState::*, CellValue::*};
+    match cell.state {
+        Unflagged => '·'.white().on_dark_grey(),
+        Flagged   => '⚐'.white().on_dark_grey(),
+        Revealed  => match cell.value {
+            Mine     => 'M'.red().on_white(),
+            Value(n) => match n {
+                1 => '1'.green(),
+                2 => '2'.blue(),
+                3 => '3'.red(),
+                n => [' ','1','2','3','4','5','6','7','8'][n].dark_red()
+            }.on_black(),
+        }
+    }
 }
 
 impl Drop for TerminalApplication {
