@@ -11,6 +11,7 @@ use rand::{rng, prelude::IndexedRandom};
 use std::panic::{set_hook, take_hook};
 
 mod style;
+mod menu;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -18,10 +19,21 @@ const FIELD_TOP_LEFT_ROW: u16 = 0;
 const FIELD_TOP_LEFT_COL: u16 = 0;
 
 pub fn main() -> Result<()> {
-    let mut t = TerminalApplication::new(std::io::stdout(), 16, 30, 99);
-    TerminalApplication::init_panic_hook();
+    init_panic_hook();
+    open_application_window()?;
 
-    t.open_application_window()?;
+    let mut start = menu::StartMenu::new(std::io::stdout());
+    let (rows, cols, nr_mines) = match start.get_start_options() {
+        Ok(options) => options,
+        Err(b) if b.is::<menu::UserQuit>() => {
+            close_application_window()?;
+            return Ok(());
+        },
+        Err(b) => return Err(b),
+    };
+    let w = start.take_stdout();
+
+    let mut t = TerminalApplication::new(w, rows, cols, nr_mines);
     t.w.execute(cursor::SetCursorStyle::BlinkingBlock)?;
     t.print_field()?;
     t.w.execute(cursor::MoveTo(t.cols / 2, t.rows / 2))?;
@@ -83,8 +95,30 @@ pub fn main() -> Result<()> {
         },
     };
 
-    t.close_application_window()?;
+    close_application_window()?;
     Ok(())
+}
+
+// Set up the application window which is an alternate-screen, raw-mode terminal.
+fn open_application_window() -> Result<()> {
+    terminal::enable_raw_mode()?;
+    execute!(std::io::stdout(), terminal::EnterAlternateScreen, cursor::MoveToRow(0))?;
+    Ok(())
+}
+
+// Close the application window. If the program exits without doing this first, things will get weird.
+fn close_application_window() -> Result<()> {
+    execute!(std::io::stdout(), terminal::LeaveAlternateScreen)?;
+    terminal::disable_raw_mode()?;
+    Ok(())
+}
+
+fn init_panic_hook() {
+    let original_hook = take_hook();
+    set_hook(Box::new(move |panic_info| {
+        let _ = close_application_window(); // ignore result since we are already panicking
+        original_hook(panic_info);
+    }));
 }
 
 struct TerminalApplication {
@@ -98,29 +132,6 @@ struct TerminalApplication {
 impl TerminalApplication {
     fn new(w: std::io::Stdout, rows: u16, cols: u16, nr_mines: usize) -> Self {
         Self { w , field: None, rows, cols, nr_mines }
-    }
-
-    // Set up the application window which is an alternate-screen, raw-mode terminal.
-    fn open_application_window(&mut self) -> Result<()> {
-        terminal::enable_raw_mode()?;
-        execute!(self.w, terminal::EnterAlternateScreen, cursor::MoveToRow(0))?;
-        Ok(())
-    }
-    
-    // Close the application window. If the program exits without doing this first, things will get weird.
-    fn close_application_window(&mut self) -> Result<()> {
-        execute!(self.w, terminal::LeaveAlternateScreen)?;
-        terminal::disable_raw_mode()?;
-        Ok(())
-    }
-
-    fn init_panic_hook() {
-        let original_hook = take_hook();
-        set_hook(Box::new(move |panic_info| {
-            let _ = terminal::disable_raw_mode();
-            let _ = std::io::stdout().execute(terminal::LeaveAlternateScreen);
-            original_hook(panic_info);
-        }));
     }
 
     fn print_field(&mut self) -> Result<()> {
@@ -313,7 +324,7 @@ fn terminal_style(cell: &Cell) -> StyledContent<char> {
 
 impl Drop for TerminalApplication {
     fn drop(&mut self) {
-        self.close_application_window().unwrap();
+        let _ = close_application_window();
     }
 }
 
