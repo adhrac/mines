@@ -9,4 +9,4 @@ rand = "0.10.0"
 
 [[bin]]
 name = "jasmines-xterm"
-path = "src/tui/tui.rs"
+path = "src/bin/tui/main.rs"
